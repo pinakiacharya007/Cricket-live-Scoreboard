@@ -1,0 +1,187 @@
+const express = require('express');
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const { Server } = require('socket.io');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+const PORT = process.env.PORT || 3000;
+const PASS = process.env.ADMIN_PASSWORD || 'admin123';
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+const FILE = path.join(DATA_DIR, 'data.json');
+const LEGAL_TYPES = new Set(['', 'b']);
+
+if (process.env.NODE_ENV === 'production' && !process.env.ADMIN_PASSWORD) {
+  throw new Error('Set ADMIN_PASSWORD before starting in production.');
+}
+
+let matches = [];
+try {
+  matches = JSON.parse(fs.readFileSync(FILE, 'utf8'));
+  if (!Array.isArray(matches)) throw new Error('Expected a JSON array of matches.');
+} catch (error) {
+  if (error.code !== 'ENOENT') throw new Error(`Could not load ${FILE}: ${error.message}`);
+}
+
+function save() {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const temp = `${FILE}.${process.pid}.tmp`;
+  fs.writeFileSync(temp, JSON.stringify(matches));
+  fs.renameSync(temp, FILE);
+}
+
+const tokens = new Set();
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
+
+const auth = (req, res, next) => tokens.has(req.get('x-token'))
+  ? next()
+  : res.status(401).json({ error: 'Login required' });
+
+const find = (req, res, next) => {
+  req.match = matches.find(match => match.id === req.params.id);
+  return req.match ? next() : res.status(404).json({ error: 'Match not found' });
+};
+
+function publish(match) {
+  save();
+  io.emit('match', match);
+  return match;
+}
+
+function totals(innings) {
+  return innings.balls.reduce((score, ball) => {
+    score.runs += Number.isFinite(ball.bat) ? ball.bat : (ball.r || 0);
+    score.runs += Number.isFinite(ball.extra) ? ball.extra : 0;
+    if (ball.w) score.wickets++;
+    if (LEGAL_TYPES.has(ball.t || '')) score.legalBalls++;
+    return score;
+  }, { runs: 0, wickets: 0, legalBalls: 0 });
+}
+
+function inningsComplete(match, index) {
+  const innings = match.innings[index];
+  if (!innings) return false;
+  const score = totals(innings);
+  if (score.wickets >= 10 || score.legalBalls >= match.overs * 6) return true;
+  if (index === 1 && score.runs > totals(match.innings[0]).runs) return true;
+  return false;
+}
+
+app.post('/api/login', (req, res) => {
+  if (req.body?.password !== PASS) return res.status(401).json({ error: 'Wrong password' });
+  const token = crypto.randomBytes(32).toString('hex');
+  tokens.add(token);
+  return res.json({ token });
+});
+
+app.get('/api/matches', (req, res) => res.json(matches));
+
+app.post('/api/matches', auth, (req, res) => {
+  const { teamA, teamB, overs, title } = req.body || {};
+  if (typeof teamA !== 'string' || !teamA.trim() || typeof teamB !== 'string' || !teamB.trim()) {
+    return res.status(400).json({ error: 'Enter both team names' });
+  }
+  const parsedOvers = overs === undefined || overs === '' ? 20 : Number(overs);
+  if (!Number.isInteger(parsedOvers) || parsedOvers < 1 || parsedOvers > 50) {
+    return res.status(400).json({ error: 'Overs must be a whole number from 1 to 50' });
+  }
+  const match = {
+    id: crypto.randomBytes(8).toString('hex'),
+    title: typeof title === 'string' ? title.trim().slice(0, 100) : '',
+    teamA: teamA.trim().slice(0, 60),
+    teamB: teamB.trim().slice(0, 60),
+    overs: parsedOvers,
+    status: 'upcoming',
+    result: '',
+    innings: []
+  };
+  matches.unshift(match);
+  return res.status(201).json(publish(match));
+});
+
+app.post('/api/matches/:id/innings', auth, find, (req, res) => {
+  const match = req.match;
+  const index = match.innings.length;
+  if (match.status === 'completed') return res.status(400).json({ error: 'Match is already finished' });
+  if (index >= 2) return res.status(400).json({ error: 'Both innings already started' });
+  if (index === 1 && !inningsComplete(match, 0)) {
+    return res.status(400).json({ error: 'Finish the first innings before starting the second' });
+  }
+  const team = index === 0 ? (req.body?.team || match.teamA)
+    : (match.innings[0].team === match.teamA ? match.teamB : match.teamA);
+  if (index === 0 && team !== match.teamA && team !== match.teamB) {
+    return res.status(400).json({ error: 'Choose one of the match teams to bat' });
+  }
+  match.innings.push({ team, balls: [] });
+  match.status = 'live';
+  match.result = '';
+  return res.json(publish(match));
+});
+
+app.post('/api/matches/:id/ball', auth, find, (req, res) => {
+  const match = req.match;
+  const index = match.innings.length - 1;
+  const innings = match.innings[index];
+  if (!innings || match.status !== 'live') return res.status(400).json({ error: 'Start an innings first' });
+  if (inningsComplete(match, index)) return res.status(400).json({ error: 'This innings is complete' });
+
+  const { t = '', w = false, striker = '', bowler = '' } = req.body || {};
+  const type = ['wd', 'nb', 'b'].includes(t) ? t : '';
+  const legacyRuns = req.body?.bat === undefined && type;
+  const rawBat = req.body?.bat ?? (legacyRuns ? 0 : req.body?.r ?? 0);
+  const rawExtra = req.body?.extra ?? (legacyRuns ? req.body?.r ?? 1 : type ? 1 : 0);
+  const bat = Number(rawBat);
+  const extra = Number(rawExtra);
+  if (!Number.isInteger(bat) || bat < 0 || bat > 6 || !Number.isInteger(extra) || extra < 0 || extra > 7) {
+    return res.status(400).json({ error: 'Runs must be whole numbers in the supported range' });
+  }
+  if (type === 'wd' && bat !== 0) return res.status(400).json({ error: 'Wide deliveries cannot add batter runs' });
+  if (type === 'b' && bat !== 0) return res.status(400).json({ error: 'Bye deliveries cannot add batter runs' });
+  if ((type === 'wd' || type === 'nb') && extra < 1) {
+    return res.status(400).json({ error: 'Wide and no-ball deliveries include at least one penalty run' });
+  }
+
+  const ball = {
+    bat,
+    extra,
+    t: type,
+    w: Boolean(w),
+    striker: typeof striker === 'string' ? striker.slice(0, 60) : '',
+    bowler: typeof bowler === 'string' ? bowler.slice(0, 60) : ''
+  };
+  ball.r = bat + extra;
+  innings.balls.push(ball);
+  if (inningsComplete(match, index)) ball.inningsComplete = true;
+  return res.json(publish(match));
+});
+
+app.post('/api/matches/:id/undo', auth, find, (req, res) => {
+  const match = req.match;
+  const innings = match.innings[match.innings.length - 1];
+  if (!innings || !innings.balls.length || match.status !== 'live') {
+    return res.status(400).json({ error: 'No ball to undo' });
+  }
+  innings.balls.pop();
+  return res.json(publish(match));
+});
+
+app.post('/api/matches/:id/finish', auth, find, (req, res) => {
+  const match = req.match;
+  if (!match.innings.length) return res.status(400).json({ error: 'Start at least one innings before finishing' });
+  match.status = 'completed';
+  match.result = typeof req.body?.result === 'string' ? req.body.result.trim().slice(0, 200) : '';
+  return res.json(publish(match));
+});
+
+app.delete('/api/matches/:id', auth, find, (req, res) => {
+  matches = matches.filter(match => match !== req.match);
+  save();
+  io.emit('removed', req.match.id);
+  return res.json({ ok: true });
+});
+
+server.listen(PORT, () => console.log(`Scoreboard running on http://localhost:${PORT}  (admin: /admin.html)`));
