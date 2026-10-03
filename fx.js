@@ -9,6 +9,7 @@ const FX=(()=>{const rnd=(a,b)=>a+Math.random()*(b-a);
    if(b.t==='nb') return 'NO BALL!';
    if(b.t==='b') return 'BYE!';
    if(b.t==='lb') return 'LEG-BYE!';
+  if(b.t==='dead') return 'DEAD BALL!';
    if(v===6) return 'SIX!';
    if(v===4) return 'FOUR!';
    if(v===0) return 'DOT!';
@@ -19,11 +20,11 @@ const FX=(()=>{const rnd=(a,b)=>a+Math.random()*(b-a);
    const v=Number.isFinite(b.bat)?b.bat:(b.t?0:CK.runs(b));
    const w=b.w && b.w.type ? b.w : false;
    const outKind=w?({caught:'caught','run out':'runout',bowled:'bowled',stumped:'stumped',lbw:'lbw'}[w.type]||'bowled'):'';
-   const k=w ? 'out' : b.t==='wd' ? 'wd' : b.t==='nb' ? 'nb' : b.t==='b'||b.t==='lb' ? 'extra' : v===6 ? 'six' : v===4 ? 'four' : v===0 ? 'dot' : v>0 ? 'run' : null;
+  const k=w ? 'out' : b.t==='dead' ? 'dead' : b.t==='wd' ? 'wd' : b.t==='nb' ? 'nb' : b.t==='b'||b.t==='lb' ? 'extra' : v===6 ? 'six' : v===4 ? 'four' : v===0 ? 'dot' : v>0 ? 'run' : null;
    if(!k)return;
    document.querySelector('.fx')?.remove();
    const who=b.striker||'Batter';
-   const extraLabel={wd:'Wide',nb:'No ball',b:'Bye',lb:'Leg-bye'}[b.t]||'';
+  const extraLabel={wd:'Wide',nb:'No ball',b:'Bye',lb:'Leg-bye',dead:'Dead ball'}[b.t]||'';
    const caughtBy=w&&(w.catcher||w.fielder);
    const detail = w ? outKind==='caught' ? `Caught by ${caughtBy||'the fielder'}` : outKind==='runout' ? `Run out${w.runOutBy?' by '+w.runOutBy:''}` : outKind==='stumped' ? `Stumped${w.wicketkeeper?' by '+w.wicketkeeper:''}` : outKind==='lbw' ? 'Leg before wicket' : 'Bowled' : extraLabel ? `${who} gets ${extraLabel.toLowerCase()}${b.bowler ? ' off '+b.bowler : ''}` : `${who} runs ${v}${b.bowler ? ' off '+b.bowler : ''}`;
    let h='';
@@ -38,12 +39,14 @@ const FX=(()=>{const rnd=(a,b)=>a+Math.random()*(b-a);
      else h='<i class="flash"></i>'+stumps;
      if(outKind==='bowled'||outKind==='runout'){document.body.classList.add('shake');setTimeout(()=>document.body.classList.remove('shake'),600)}
    }
-   if(k==='wd'||k==='nb'||k==='extra'){h='<i class="ring"></i>'+parts(18,['#F6C945','#D7263D','#fff']);}
+  if(k==='wd'||k==='nb'||k==='extra'){h='<i class="ring"></i>'+parts(18,['#F6C945','#D7263D','#fff']);}
+  if(k==='dead'){h='<i class="ring"></i>'+parts(10,['#526579','#fff','#CBE3FF']);}
    if(k==='dot'){h='<i class="ring"></i>'+parts(12,['#0F2A43','#526579','#fff']);}
   if(k==='run'){h='<i class="runner runner-a"></i><i class="runner runner-b"></i><i class="ring"></i>'+parts(16,['#2B6CB0','#38C172','#fff']);}
   const d=document.createElement('div');d.className='fx '+k+(outKind?' out-'+outKind:'');d.setAttribute('aria-hidden','true');d.innerHTML=h+`<div><div class="t">${textFor(b,v,w)}</div><div class="s">${esc(detail)}</div></div>`;document.body.append(d);setTimeout(()=>d.remove(),w?5600:2400)
  }
- function tossing(){if(document.querySelector('.fx.toss-live'))return;document.querySelector('.fx')?.remove();const d=document.createElement('div');d.className='fx toss toss-live';d.setAttribute('aria-hidden','true');d.innerHTML='<span class="toss-coin toss-result" aria-hidden="true">T</span><div><div class="t">TOSS IN PROGRESS</div><div class="s">Waiting for the scorer to announce the result</div></div>';document.body.append(d)}
+ function tossing(){if(document.querySelector('.fx.toss-live'))return;document.querySelector('.fx')?.remove();const d=document.createElement('div');d.className='fx toss toss-live';d.setAttribute('aria-hidden','true');d.innerHTML='<span class="toss-coin toss-result" aria-hidden="true">TOSS</span><div><div class="t">TOSS IN PROGRESS</div><div class="s">Waiting for the scorer to announce the result</div></div>';document.body.append(d)}
  function stopTossing(){document.querySelector('.fx.toss-live')?.remove()}
- function toss(m){stopTossing();document.querySelector('.fx')?.remove();const d=document.createElement('div');d.className='fx toss';d.setAttribute('aria-hidden','true');d.innerHTML='<span class="toss-coin toss-result" aria-hidden="true">T</span><div><div class="t">TOSS!</div><div class="s">'+esc(CK.tossText(m))+'</div></div>';document.body.append(d);setTimeout(()=>d.remove(),5600)}
- return{ball,toss,tossing,stopTossing}})();
+ function toss(m){stopTossing();document.querySelector('.fx')?.remove();const d=document.createElement('div');d.className='fx toss';d.setAttribute('aria-hidden','true');d.innerHTML='<span class="toss-coin toss-result" aria-hidden="true">TOSS</span><div><div class="t">TOSS!</div><div class="s">'+esc(CK.tossText(m))+'</div></div>';document.body.append(d);setTimeout(()=>d.remove(),5600)}
+ function finish(m){document.querySelector('.fx')?.remove();const winner=m.winner?m.winner+' won':m.result||'Match finished',d=document.createElement('div');d.className='fx finish';d.setAttribute('aria-hidden','true');d.innerHTML=parts(110,['#F6C945','#38C172','#2B6CB0','#D7263D','#fff'])+'<div><div class="t">CHAMPIONS!</div><div class="s">'+esc(winner)+'</div></div>';document.body.append(d);setTimeout(()=>d.remove(),6200)}
+ return{ball,toss,tossing,stopTossing,finish}})();

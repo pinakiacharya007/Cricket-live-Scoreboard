@@ -3,6 +3,6 @@ const tabs=[['all','All'],['live','Live'],['upcoming','Upcoming'],['completed','
 function draw(){document.querySelectorAll('details.mrow').forEach(d=>d.open?open.add(d.dataset.id):open.delete(d.dataset.id));
  const a=data.filter(m=>f==='all'||m.status===f).sort((x,y)=>order[x.status]-order[y.status]||(x.status==='completed'?(y.startsAt||'').localeCompare(x.startsAt||''):(x.startsAt||'9').localeCompare(y.startsAt||'9')));
  $('#tabs').innerHTML=tabs.map(([k,t])=>`<button aria-pressed="${k===f}" data-f="${k}">${t}</button>`).join('');
- $('#list').innerHTML=a.map(m=>`<details class="glass mrow" data-id="${m.id}" ${open.has(m.id)?'open':''}><summary>${head(m)}${rows(m)}${m.result?`<p class="res">${esc(m.result)}</p>`:''}</summary><div class="body">${charts(m)}<p><a href="match.html?id=${m.id}">Open the full match page</a></p></div></details>`).join('')||'<div class="empty glass"><img src="img/stumps.svg" alt="">No matches here yet.</div>';}
+ $('#list').innerHTML=a.map(m=>`<details class="glass mrow" data-id="${m.id}" ${open.has(m.id)?'open':''}><summary>${head(m)}${rows(m)}${outcomeHTML(m)}</summary><div class="body">${charts(m)}<p><a href="match.html?id=${m.id}">Open the full match page</a></p></div></details>`).join('')||'<div class="empty glass"><img src="img/stumps.svg" alt="">No matches here yet.</div>';}
 $('#tabs').onclick=e=>{const b=e.target.closest('button');if(b){f=b.dataset.f;draw()}};
-live(ms=>{data=ms;draw();if(ms.some(m=>m.toss&&m.toss.status==='flipping'))FX.tossing();else FX.stopTossing()},(m,toss,kind)=>{if(kind==='toss-start')FX.tossing();else if(kind==='toss-result')FX.toss(m)});</script></body></html>
+live(ms=>{data=ms;draw()});</script></body></html>

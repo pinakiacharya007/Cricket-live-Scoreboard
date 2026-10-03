@@ -7,14 +7,17 @@ function live(cb,hook){let ms=[],cnt={};const total=m=>m.innings.reduce((n,i)=>n
  s.on('connect',()=>{$('#conn')&&($('#conn').className='ok');sync()});s.on('disconnect',()=>$('#conn')&&($('#conn').className=''));
  s.on('match',m=>{const prev=cnt[m.id],now=total(m),i=ms.findIndex(x=>x.id===m.id),old=i<0?null:ms[i];cnt[m.id]=now;i<0?ms.unshift(m):ms[i]=m;cb(ms);
     if(hook&&old&&old.toss?.status!==m.toss?.status){if(m.toss?.status==='flipping')hook(m,m.toss,'toss-start');else if(m.toss?.status==='announced')hook(m,m.toss,'toss-result')}
+    if(hook&&old&&old.status!==m.status)hook(m,m.status,'status');
   if(hook&&prev!==undefined&&now===prev+1){const l=m.innings[m.innings.length-1];hook(m,l.balls[l.balls.length-1],'ball')}});
  s.on('removed',id=>{ms=ms.filter(x=>x.id!==id);cb(ms)})}
 function crest(n){let h=0;for(const c of n)h=(h*31+c.charCodeAt(0))%360;const i=n.trim().split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
  return `<span class="crest" style="background:linear-gradient(135deg,hsl(${h} 72% 58%),hsl(${(h+45)%360} 76% 40%))">${esc(i)}</span>`}
-function pill(m){return m.status==='live'?'<span class="pill live"><i class="dot"></i>Live</span>':`<span class="pill">${m.status==='completed'?'Finished':'Upcoming'}</span>`}
+function pill(m){return m.status==='completed'?'<span class="pill finished">Finished</span>':m.status==='live'&&m.break?'<span class="pill paused"><i class="dot"></i>Break</span>':m.status==='live'?'<span class="pill live"><i class="dot"></i>Live</span>':'<span class="pill">Upcoming</span>'}
 function whenHTML(m){const w=CK.whenParts(m);return w?`<span class="when"><b>${w.day}</b> ${w.date} at ${w.time}</span>`:''}
 function rows(m){const s=CK.summarize(m),row=t=>{const i=s.find(x=>x.team===t);return `<div class="tm">${crest(t)}<span class="nm">${esc(t)}</span><b>${i?i.runs+'/'+i.wkts:'–'}</b><small>${i?i.overs+' ov':''}</small></div>`};return row(m.teamA)+row(m.teamB)}
-function head(m){return `<div class="meta">${pill(m)}<span>${esc(m.title)}</span></div>${whenHTML(m)}`}
-function card(m){return `<a class="card glass ${m.status}" href="match.html?id=${m.id}">${head(m)}${rows(m)}${m.result?`<p class="res">${esc(m.result)}</p>`:''}</a>`}
-function chrome(active){const L=[['home','Home','index.html'],['teams','Teams','teams.html'],['matches','All matches','matches.html']];
+function tossState(m){return m.toss?.status==='flipping'?'<span class="toss-card-state"><i class="toss-card-coin">TOSS</i> Toss in progress</span>':m.toss?.announced?`<span class="toss-card-result">${esc(CK.tossText(m))}</span>`:''}
+function head(m){return `<div class="meta">${pill(m)}<span>${esc(m.title)}</span></div>${whenHTML(m)}${tossState(m)}`}
+function outcomeHTML(m){if(m.status!=='completed')return '';return `<p class="res winner-result">${esc(m.winner?m.winner+' won':m.result||'Match finished')}</p>${m.winner&&m.result&&m.result!==m.winner+' won'?`<small class="result-detail">${esc(m.result)}</small>`:''}`}
+function card(m){return `<a class="card glass ${m.status}" href="match.html?id=${m.id}">${head(m)}${rows(m)}${outcomeHTML(m)}</a>`}
+function chrome(active){const L=[['home','Home','index.html'],['teams','Teams','teams.html'],['matches','All matches','matches.html'],['scorer','Scorer','admin.html']];
  $('#top').innerHTML=`<a class="brand" href="index.html"><img src="img/ball.svg" alt=""><span>Live Cricket</span></a><nav class="nav">${L.map(([k,t,h])=>`<a href="${h}"${k===active?' aria-current="page"':''}>${t}</a>`).join('')}</nav><span id="conn" title="Live connection"></span>`}

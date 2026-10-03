@@ -21,6 +21,8 @@ function withDefaults(m) {
   m.startsAt = m.startsAt || '';
   m.squadA = m.squadA || [];
   m.squadB = m.squadB || [];
+  m.break = Boolean(m.break);
+  m.winner = m.winner || '';
   m.toss = m.toss || { status: 'idle', wonBy: '', decision: '', announced: false };
   m.toss.status = m.toss.announced ? 'announced' : m.toss.status || 'idle';
   m.current = m.current || { striker: '', nonStriker: '', bowler: '' };
@@ -41,6 +43,8 @@ function normalizeWicket(raw) {
     catcher: clean(raw.catcher || raw.fieldedBy || '', 60),
     wicketkeeper: clean(raw.wicketkeeper || raw.wk || '', 60),
     runOutBy: clean(raw.runOutBy || raw.runner || '', 60),
+    outPlayer: clean(raw.outPlayer || '', 60),
+    newBatter: clean(raw.newBatter || '', 60),
     note: clean(raw.note || '', 80)
   };
 }
@@ -138,6 +142,8 @@ app.post('/api/matches', auth, (req, res) => {
     teamB: teamB.trim().slice(0, 60),
     overs: parsedOvers,
     status: 'upcoming',
+    break: false,
+    winner: '',
     startsAt: startsAt || '',
     squadA: [],
     squadB: [],
@@ -165,6 +171,7 @@ app.post('/api/matches/:id/innings', auth, find, (req, res) => {
   }
   match.innings.push({ team, balls: [] });
   match.status = 'live';
+  match.break = false;
   match.result = '';
   return res.json(publish(match));
 });
@@ -174,17 +181,20 @@ app.post('/api/matches/:id/ball', auth, find, (req, res) => {
   const index = match.innings.length - 1;
   const innings = match.innings[index];
   if (!innings || match.status !== 'live') return res.status(400).json({ error: 'Start an innings first' });
+  if (match.break) return res.status(400).json({ error: 'Resume the match before scoring' });
   if (inningsComplete(match, index)) return res.status(400).json({ error: 'This innings is complete' });
 
   const body = req.body || {};
   const { t = '', striker = '', nonStriker = '', bowler = '' } = body;
-  const type = ['wd', 'nb', 'b', 'lb'].includes(t) ? t : '';
+  const type = ['wd', 'nb', 'b', 'lb', 'dead'].includes(t) ? t : '';
   const legacyRuns = body.bat === undefined && type;
   const rawBat = body.bat ?? (legacyRuns ? 0 : body.r ?? 0);
-  const rawExtra = body.extra ?? (legacyRuns ? body.r ?? 1 : type ? 1 : 0);
+  const rawExtra = body.extra ?? (legacyRuns ? body.r ?? (type === 'dead' ? 0 : 1) : ['wd', 'nb', 'b', 'lb'].includes(type) ? 1 : 0);
   const bat = Number(rawBat);
   const extra = Number(rawExtra);
   const wicket = normalizeWicket(body.w ?? body.wicket ?? body.dismissal ?? body.out ?? false);
+  const fieldingSquad = innings.team === match.teamA ? match.squadB : match.squadA;
+  const battingSquad = innings.team === match.teamA ? match.squadA : match.squadB;
   if (!Number.isInteger(bat) || bat < 0 || bat > 6 || !Number.isInteger(extra) || extra < 0 || extra > 7) {
     return res.status(400).json({ error: 'Runs must be whole numbers in the supported range' });
   }
@@ -192,6 +202,26 @@ app.post('/api/matches/:id/ball', auth, find, (req, res) => {
   if ((type === 'b' || type === 'lb') && bat !== 0) return res.status(400).json({ error: 'Bye/leg-bye deliveries cannot add batter runs' });
   if ((type === 'wd' || type === 'nb') && extra < 1) {
     return res.status(400).json({ error: 'Wide and no-ball deliveries include at least one penalty run' });
+  }
+  if (type === 'dead' && (bat !== 0 || extra !== 0 || wicket)) {
+    return res.status(400).json({ error: 'A dead ball cannot add runs or a wicket' });
+  }
+  if (wicket && wicket.type) {
+    const eligibleFielders = new Set(fieldingSquad.map(name => name.toLowerCase()));
+    for (const name of [wicket.catcher, wicket.fielder, wicket.wicketkeeper, wicket.runOutBy].filter(Boolean)) {
+      if (!eligibleFielders.has(name.toLowerCase())) {
+        return res.status(400).json({ error: `${name} must be selected from the bowling team` });
+      }
+    }
+    const eligibleBatters = new Set(battingSquad.map(name => name.toLowerCase()));
+    for (const name of [wicket.outPlayer, wicket.newBatter].filter(Boolean)) {
+      if (!eligibleBatters.has(name.toLowerCase())) {
+        return res.status(400).json({ error: `${name} must be selected from the batting team` });
+      }
+    }
+    if (wicket.outPlayer && wicket.newBatter && wicket.outPlayer.toLowerCase() === wicket.newBatter.toLowerCase()) {
+      return res.status(400).json({ error: 'Choose a different replacement batter' });
+    }
   }
 
   const ball = {
@@ -201,12 +231,16 @@ app.post('/api/matches/:id/ball', auth, find, (req, res) => {
     w: wicket && wicket.type ? wicket : false,
     striker: typeof striker === 'string' ? striker.slice(0, 60) : '',
     nonStriker: typeof nonStriker === 'string' ? nonStriker.slice(0, 60) : '',
-    bowler: typeof bowler === 'string' ? bowler.slice(0, 60) : ''
+    bowler: typeof bowler === 'string' ? bowler.slice(0, 60) : '',
+    outPlayer: wicket && wicket.type ? wicket.outPlayer : '',
+    newBatter: wicket && wicket.type ? wicket.newBatter : ''
   };
   ball.r = bat + extra;
   innings.balls.push(ball);
-  if (ball.striker) match.current.striker = ball.striker;
-  if (ball.nonStriker) match.current.nonStriker = ball.nonStriker;
+  const nextStriker = clean(body.nextStriker, 60) || (ball.outPlayer === ball.striker ? ball.newBatter : '') || ball.striker;
+  const nextNonStriker = clean(body.nextNonStriker, 60) || (ball.outPlayer === ball.nonStriker ? ball.newBatter : '') || ball.nonStriker;
+  if (nextStriker) match.current.striker = nextStriker;
+  if (nextNonStriker) match.current.nonStriker = nextNonStriker;
   if (ball.bowler) match.current.bowler = ball.bowler;
   if (inningsComplete(match, index)) ball.inningsComplete = true;
   return res.json(publish(match));
@@ -222,11 +256,35 @@ app.post('/api/matches/:id/undo', auth, find, (req, res) => {
   return res.json(publish(match));
 });
 
+app.post('/api/matches/:id/break', auth, find, (req, res) => {
+  if (req.match.status !== 'live') return res.status(400).json({ error: 'Only a live match can be paused' });
+  req.match.break = req.body?.paused === undefined ? !req.match.break : Boolean(req.body.paused);
+  return res.json(publish(req.match));
+});
+
 app.post('/api/matches/:id/finish', auth, find, (req, res) => {
   const match = req.match;
   if (!match.innings.length) return res.status(400).json({ error: 'Start at least one innings before finishing' });
+  const first = totals(match.innings[0]);
+  const second = match.innings[1] ? totals(match.innings[1]) : null;
+  let winner = '';
+  let automaticResult = '';
+  if (second) {
+    if (first.runs === second.runs) automaticResult = 'Match tied';
+    else if (second.runs > first.runs) {
+      winner = match.innings[1].team;
+      automaticResult = `${winner} won by ${10 - second.wickets} wickets`;
+    } else {
+      winner = match.innings[0].team;
+      automaticResult = `${winner} won by ${first.runs - second.runs} runs`;
+    }
+  }
   match.status = 'completed';
-  match.result = typeof req.body?.result === 'string' ? req.body.result.trim().slice(0, 200) : '';
+  match.break = false;
+  match.winner = winner || [match.teamA, match.teamB].find(team => String(req.body?.result || '').toLowerCase().startsWith(team.toLowerCase())) || '';
+  match.result = typeof req.body?.result === 'string' && req.body.result.trim()
+    ? req.body.result.trim().slice(0, 200)
+    : automaticResult || 'Match finished';
   return res.json(publish(match));
 });
 
