@@ -1,5 +1,5 @@
 (function(g){
-const legal=b=>!['wd','nb','lb'].includes(b.t);
+const legal=b=>!['wd','nb'].includes(b.t);
 const runs=b=>Number.isFinite(b.bat)||Number.isFinite(b.extra)?(Number(b.bat)||0)+(Number(b.extra)||0):Number(b.r)||0;
 function summarize(m){return m.innings.map(i=>{let r=0,w=0,l=0;i.balls.forEach(b=>{r+=runs(b);if(b.w)w++;if(legal(b))l++});return{team:i.team,runs:r,wkts:w,balls:l,overs:Math.floor(l/6)+'.'+l%6}})}
 function timeline(i){let l=0;return i.balls.map(b=>{const ov=Math.floor(l/6),label=ov+'.'+(l%6+1);if(legal(b))l++;return{...b,ov,label}})}

@@ -41,7 +41,9 @@ const FX=(()=>{const rnd=(a,b)=>a+Math.random()*(b-a);
    if(k==='wd'||k==='nb'||k==='extra'){h='<i class="ring"></i>'+parts(18,['#F6C945','#D7263D','#fff']);}
    if(k==='dot'){h='<i class="ring"></i>'+parts(12,['#0F2A43','#526579','#fff']);}
   if(k==='run'){h='<i class="runner runner-a"></i><i class="runner runner-b"></i><i class="ring"></i>'+parts(16,['#2B6CB0','#38C172','#fff']);}
-  const d=document.createElement('div');d.className='fx '+k+(outKind?' out-'+outKind:'');d.setAttribute('aria-hidden','true');d.innerHTML=h+`<div><div class="t">${textFor(b,v,w)}</div><div class="s">${esc(detail)}</div></div>`;document.body.append(d);setTimeout(()=>d.remove(),2400)
+  const d=document.createElement('div');d.className='fx '+k+(outKind?' out-'+outKind:'');d.setAttribute('aria-hidden','true');d.innerHTML=h+`<div><div class="t">${textFor(b,v,w)}</div><div class="s">${esc(detail)}</div></div>`;document.body.append(d);setTimeout(()=>d.remove(),w?5600:2400)
  }
- function toss(m){document.querySelector('.fx')?.remove();const d=document.createElement('div');d.className='fx toss';d.setAttribute('aria-hidden','true');d.innerHTML='<span class="toss-coin toss-result" aria-hidden="true">T</span><div><div class="t">TOSS!</div><div class="s">'+esc(CK.tossText(m))+'</div></div>';document.body.append(d);setTimeout(()=>d.remove(),2600)}
- return{ball,toss}})();
+ function tossing(){if(document.querySelector('.fx.toss-live'))return;document.querySelector('.fx')?.remove();const d=document.createElement('div');d.className='fx toss toss-live';d.setAttribute('aria-hidden','true');d.innerHTML='<span class="toss-coin toss-result" aria-hidden="true">T</span><div><div class="t">TOSS IN PROGRESS</div><div class="s">Waiting for the scorer to announce the result</div></div>';document.body.append(d)}
+ function stopTossing(){document.querySelector('.fx.toss-live')?.remove()}
+ function toss(m){stopTossing();document.querySelector('.fx')?.remove();const d=document.createElement('div');d.className='fx toss';d.setAttribute('aria-hidden','true');d.innerHTML='<span class="toss-coin toss-result" aria-hidden="true">T</span><div><div class="t">TOSS!</div><div class="s">'+esc(CK.tossText(m))+'</div></div>';document.body.append(d);setTimeout(()=>d.remove(),5600)}
+ return{ball,toss,tossing,stopTossing}})();

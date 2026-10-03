@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3000;
 const PASS = process.env.ADMIN_PASSWORD || 'admin123';
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const FILE = path.join(DATA_DIR, 'data.json');
-const LEGAL_TYPES = new Set(['', 'b']);
+const LEGAL_TYPES = new Set(['', 'b', 'lb']);
 const clean = (s, n = 40) => (typeof s === 'string' ? s.trim().replace(/\s+/g, ' ').slice(0, n) : '');
 const validStart = s => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s || '') && !Number.isNaN(Date.parse(s));
 const validTossDecision = s => ['batting', 'bowling'].includes(s || '');
@@ -21,7 +21,8 @@ function withDefaults(m) {
   m.startsAt = m.startsAt || '';
   m.squadA = m.squadA || [];
   m.squadB = m.squadB || [];
-  m.toss = m.toss || { wonBy: '', decision: '', announced: false };
+  m.toss = m.toss || { status: 'idle', wonBy: '', decision: '', announced: false };
+  m.toss.status = m.toss.announced ? 'announced' : m.toss.status || 'idle';
   m.current = m.current || { striker: '', nonStriker: '', bowler: '' };
   m.current.striker = m.current.striker || '';
   m.current.nonStriker = m.current.nonStriker || '';
@@ -140,7 +141,8 @@ app.post('/api/matches', auth, (req, res) => {
     startsAt: startsAt || '',
     squadA: [],
     squadB: [],
-    current: { striker: '', bowler: '' },
+    current: { striker: '', nonStriker: '', bowler: '' },
+    toss: { status: 'idle', wonBy: '', decision: '', announced: false },
     result: '',
     innings: []
   };
@@ -265,15 +267,30 @@ app.post('/api/matches/:id/current', auth, find, (req, res) => {
   return res.json(publish(req.match));
 });
 
+app.post('/api/matches/:id/toss/start', auth, find, (req, res) => {
+  if (req.match.innings.length || req.match.status === 'completed') {
+    return res.status(400).json({ error: 'The toss must happen before the innings start' });
+  }
+  if (req.match.toss?.announced) return res.status(400).json({ error: 'The toss has already been announced' });
+  req.match.toss = { status: 'flipping', wonBy: '', decision: '', announced: false, startedAt: Date.now() };
+  return res.json(publish(req.match));
+});
+
 app.post('/api/matches/:id/toss', auth, find, (req, res) => {
   const { wonBy, decision } = req.body || {};
+  if (req.match.toss?.status !== 'flipping') {
+    return res.status(400).json({ error: 'Start the toss before announcing the result' });
+  }
+  if (req.match.innings.length || req.match.status === 'completed') {
+    return res.status(400).json({ error: 'The toss must be announced before the innings start' });
+  }
   if (wonBy !== req.match.teamA && wonBy !== req.match.teamB) {
     return res.status(400).json({ error: 'Choose a valid team that won the toss' });
   }
   if (!validTossDecision(decision)) {
     return res.status(400).json({ error: 'Choose batting or bowling as the toss decision' });
   }
-  req.match.toss = { wonBy, decision, announced: true };
+  req.match.toss = { status: 'announced', wonBy, decision, announced: true };
   if (!req.match.status || req.match.status === 'completed') {
     req.match.status = req.match.status === 'completed' ? 'completed' : 'upcoming';
   }

@@ -6,7 +6,7 @@ function live(cb,hook){let ms=[],cnt={};const total=m=>m.innings.reduce((n,i)=>n
  const sync=()=>api('/api/matches').then(a=>{ms=a;cnt={};a.forEach(m=>cnt[m.id]=total(m));cb(ms)}).catch(()=>{});
  s.on('connect',()=>{$('#conn')&&($('#conn').className='ok');sync()});s.on('disconnect',()=>$('#conn')&&($('#conn').className=''));
  s.on('match',m=>{const prev=cnt[m.id],now=total(m),i=ms.findIndex(x=>x.id===m.id),old=i<0?null:ms[i];cnt[m.id]=now;i<0?ms.unshift(m):ms[i]=m;cb(ms);
-  if(hook&&old&&JSON.stringify(old.toss)!==JSON.stringify(m.toss)&&m.toss&&m.toss.announced)hook(m,m.toss,'toss');
+    if(hook&&old&&old.toss?.status!==m.toss?.status){if(m.toss?.status==='flipping')hook(m,m.toss,'toss-start');else if(m.toss?.status==='announced')hook(m,m.toss,'toss-result')}
   if(hook&&prev!==undefined&&now===prev+1){const l=m.innings[m.innings.length-1];hook(m,l.balls[l.balls.length-1],'ball')}});
  s.on('removed',id=>{ms=ms.filter(x=>x.id!==id);cb(ms)})}
 function crest(n){let h=0;for(const c of n)h=(h*31+c.charCodeAt(0))%360;const i=n.trim().split(/\s+/).map(w=>w[0]).join('').slice(0,2).toUpperCase();
