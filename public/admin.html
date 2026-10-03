@@ -1,9 +1,10 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="style.css"><link rel="icon" href="img/ball.svg"><title>Handle match</title></head><body><div class="bg"></div><header class="top glass" id="top"></header><main class="narrow"><div id="panel" hidden>
 <section class="glass panel"><div class="row" style="margin-top:0"><select id="sel" aria-label="Match" style="flex:1"></select></div><div id="when"></div>
 <div class="row"><label for="bt">First innings batting team</label><select id="bt"></select></div>
+<div class="toss-control"><button class="alt" id="startToss" type="button">Start toss</button><span id="tossCoin" class="toss-coin" aria-hidden="true">T</span><p id="tossStatus" class="meta" role="status">Start the toss to begin.</p></div>
 <div class="row"><label for="tossWinner">Toss winner</label><select id="tossWinner"><option value="">Not decided</option></select></div>
 <div class="row"><label for="tossDecision">Toss decision</label><select id="tossDecision"><option value="">Choose</option><option value="batting">Bat first</option><option value="bowling">Bowl first</option></select></div>
-<div class="row"><button class="alt" id="tossBtn">Announce toss</button></div>
+<div class="row"><button class="alt" id="tossBtn" disabled>Announce toss</button></div>
 <div id="sum"></div>
 <div class="row"><button id="inn">Start innings</button></div></section>
 <section class="glass panel"><div class="row" style="margin-top:0"><input id="st" list="stl" placeholder="Batter on strike"><input id="ns" list="nsl" placeholder="Non-striker"><datalist id="stl"></datalist><datalist id="nsl"></datalist><input id="bw" list="bwl" placeholder="Bowler"><datalist id="bwl"></datalist></div>
@@ -11,9 +12,10 @@
 <div class="row"><button class="alt" id="setp">Show these players to viewers</button></div>
 <div class="score-fields"><label for="xr">Extra runs beyond the penalty<input id="xr" type="number" min="0" max="6" value="0"></label><label for="nr">No-ball batter runs<input id="nr" type="number" min="0" max="6" value="0"></label></div>
 <div class="pad" id="pad"></div><div class="row"><button class="alt" id="undo">Undo last ball</button></div>
-<div class="row preview"><small>Preview on this screen:</small><button class="f4" data-fx="4">FOUR</button><button class="s6" data-fx="6">SIX</button><button class="w" data-fx="w">OUT</button></div></section>
+<div class="row preview"><small>Preview on this screen:</small><button class="f4" data-fx="4">FOUR</button><button class="s6" data-fx="6">SIX</button><button class="w" data-out-preview="caught">CATCH</button><button class="w" data-out-preview="run out">RUN OUT</button><button class="w" data-out-preview="bowled">BOWLED</button><button class="w" data-out-preview="stumped">STUMPED</button><button class="w" data-out-preview="lbw">LBW</button></div></section>
 <section class="glass panel"><div class="row" style="margin-top:0"><input id="res" placeholder="Result, e.g. Tigers won by 12 runs"><button class="alt" id="fin">Finish match</button></div>
 <div class="row"><button class="danger" id="del">Delete match</button></div></section></div></main><script src="/socket.io/socket.io.js"></script><script src="shared.js"></script><script src="app.js"></script><script src="charts.js"></script><script src="fx.js"></script><script src="admin.js"></script><script>adminInit('handle');let ms=[],cur=null,shown=null;
+let tossReady=false,tossTimer=null;
 const wicketPayload=()=>{
   const type=$('#outType').value;
   if(!type) return false;
@@ -27,11 +29,13 @@ const mk=(l,c,f)=>{const b=document.createElement('button');b.textContent=l;b.cl
 [['Wd','wd'],['Nb','nb'],['Bye','b'],['LB','lb']].forEach(([l,t])=>mk(l,'x',()=>ball(0,t,false)));mk('W','w',()=>ball(0,'',true));
 $('#undo').onclick=()=>run(()=>post(cur,'/undo'));$('#inn').onclick=()=>run(()=>post(cur,'/innings',{team:$('#bt').value}));
 $('#setp').onclick=()=>run(()=>post(cur,'/current',{striker:$('#st').value,nonStriker:$('#ns').value,bowler:$('#bw').value}));
-$('#tossBtn').onclick=()=>run(async()=>{const winner=$('#tossWinner').value;const choice=$('#tossDecision').value;if(!winner||!choice)throw new Error('Pick the toss winner and decision first');await post(cur,'/toss',{wonBy:winner,decision:choice});say('Toss confirmed for '+winner+' to '+choice+' first');});
+$('#startToss').onclick=()=>{if(!cur)return;clearTimeout(tossTimer);tossReady=false;const coin=$('#tossCoin');coin.classList.remove('flipping');void coin.offsetWidth;coin.classList.add('flipping');$('#tossStatus').textContent='The coin is in the air...';$('#startToss').disabled=true;tossTimer=setTimeout(()=>{tossReady=true;coin.classList.remove('flipping');draw()},2000)};
+$('#tossBtn').onclick=()=>run(async()=>{const winner=$('#tossWinner').value;const choice=$('#tossDecision').value;if(!winner||!choice)throw new Error('Pick the toss winner and decision first');await post(cur,'/toss',{wonBy:winner,decision:choice});tossReady=false;FX.toss({toss:{wonBy:winner,decision:choice,announced:true}});say('Toss confirmed for '+winner+' to '+choice+' first');});
 $('#fin').onclick=()=>run(()=>post(cur,'/finish',{result:$('#res').value}));
 $('#del').onclick=()=>confirm('Delete this match for good?')&&run(async()=>{await api('/api/matches/'+cur,{method:'DELETE'});cur=null});
-$('#sel').onchange=e=>{cur=e.target.value;draw()};$('#bt').onchange=()=>draw();
+$('#sel').onchange=e=>{clearTimeout(tossTimer);tossReady=false;cur=e.target.value;draw()};$('#bt').onchange=()=>draw();
 document.querySelectorAll('[data-fx]').forEach(b=>b.onclick=()=>FX.ball(b.dataset.fx==='w'?{w:{type:'caught',catcher:'Fielder'},striker:'Batter',nonStriker:'Partner',bowler:'Bowler'}:{bat:+b.dataset.fx,striker:'Batter',nonStriker:'Partner',bowler:'Bowler'}));
+document.querySelectorAll('[data-out-preview]').forEach(b=>b.onclick=()=>{const type=b.dataset.outPreview;FX.ball({w:{type,catcher:$('#catcher').value||'Fielder',fielder:$('#catcher').value||'Fielder',runOutBy:$('#runBy').value||'Fielder',wicketkeeper:$('#wk').value||'Keeper'},striker:$('#st').value||'Batter',bowler:$('#bw').value||'Bowler'})});
 function draw(){const m=ms.find(x=>x.id===cur)||ms[0];cur=m?m.id:null;$('#sel').innerHTML=matchSelect(ms,cur);
  const keep=$('#bt').value;$('#bt').innerHTML=m?[m.teamA,m.teamB].map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join(''):'';
  $('#tossWinner').innerHTML=m?`<option value="">Not decided</option><option value="${esc(m.teamA)}">${esc(m.teamA)}</option><option value="${esc(m.teamB)}">${esc(m.teamB)}</option>`:'<option value="">Not decided</option>';
@@ -44,7 +48,8 @@ function draw(){const m=ms.find(x=>x.id===cur)||ms[0];cur=m?m.id:null;$('#sel').
  $('#when').innerHTML=m?whenHTML(m):'';
  const s=m?CK.summarize(m):[];$('#sum').innerHTML=m?(s.length?s.map(i=>`<div class="tm">${crest(i.team)}<span class="nm">${esc(i.team)}</span><b>${i.runs}/${i.wkts}</b><small>${i.overs} ov</small></div>`).join(''):'<p class="meta">Not started. Press Start innings.</p>'):'<p class="meta">No match yet. Add one on the Add match page.</p>';
  if(m&&m.toss&&m.toss.announced){$('#sum').insertAdjacentHTML('beforeend',`<p class="meta">${esc(CK.tossText(m))}</p>`)}
+ const tossAnnounced=!!(m&&m.toss&&m.toss.announced);$('#startToss').disabled=!m||n>0||tossAnnounced||m.status==='completed';$('#tossWinner').disabled=!m||(!tossReady&&!tossAnnounced)||n>0;$('#tossDecision').disabled=!m||(!tossReady&&!tossAnnounced)||n>0;$('#tossBtn').disabled=!m||!tossReady||tossAnnounced||n>0||m.status==='completed';$('#tossStatus').textContent=tossAnnounced?CK.tossText(m):tossReady?'Coin landed. Choose the winner and their decision.':n>0?'The toss is locked after the first innings starts.':'Start the toss to begin.';
  $('#inn').textContent='Start innings '+(n+1);$('#inn').disabled=!m||m.status==='completed'||n>=2||(n===1&&!CK.complete(m,0));
- ['setp','undo','fin','del','tossBtn'].forEach(k=>$('#'+k).disabled=!m||(k!=='del'&&m.status==='completed')||(k==='undo'&&m.status!=='live')||(k==='tossBtn'&&m.status==='completed'));
+ ['setp','undo','fin','del'].forEach(k=>$('#'+k).disabled=!m||(k!=='del'&&m.status==='completed')||(k==='undo'&&m.status!=='live'));
  [...$('#pad').children].forEach(b=>b.disabled=!m||m.status!=='live')}
 live(a=>{ms=a;draw()});</script></body></html>
