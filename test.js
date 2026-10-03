@@ -5,8 +5,11 @@ const srv=spawn('node',['server.js'],{env:{...process.env,PORT,ADMIN_PASSWORD:'p
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const call=async(p,method='GET',body,t)=>{const r=await fetch(B+p,{method,headers:{'Content-Type':'application/json',...(t?{'x-token':t}:{})},body:body?JSON.stringify(body):undefined});return{status:r.status,body:await r.json()}};
 (async()=>{let ok=false;try{await sleep(800);
+ for(const file of ['/admin.js','/charts.js','/fx.js','/add-match.html'])assert.strictEqual((await fetch(B+file)).status,200,`${file} must be served`);
  assert.strictEqual((await call('/api/login','POST',{password:'bad'})).status,401);
  const t=(await call('/api/login','POST',{password:'pw'})).body.token;
+ assert.strictEqual((await fetch(B+'/api/session',{headers:{'x-token':t}})).status,200,'valid session is accepted');
+ assert.strictEqual((await fetch(B+'/api/session',{headers:{'x-token':'stale-token'}})).status,401,'stale session is rejected');
  assert.strictEqual((await call('/api/matches','POST',{teamA:'A',teamB:'B'})).status,401,'create needs login');
  const sock=io(B),got=[];sock.on('match',m=>got.push(m));await sleep(300);
  const m=(await call('/api/matches','POST',{teamA:'Tigers',teamB:'Lions',overs:2},t)).body,u='/api/matches/'+m.id;

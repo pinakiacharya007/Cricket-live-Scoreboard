@@ -1,0 +1,17 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="style.css"><link rel="icon" href="img/ball.svg"><title>Add match</title></head><body><div class="bg"></div><header class="top glass" id="top"></header><main class="narrow"><div id="panel" hidden>
+<section class="glass panel"><h2 style="margin-top:0">Add a match</h2><div class="row"><input id="ta" placeholder="Team A"><input id="tb" placeholder="Team B"></div>
+<div class="row"><input id="ti" placeholder="Title (optional), e.g. Semi final"><input id="ov" type="number" min="1" max="50" value="20" style="max-width:90px" aria-label="Overs"></div>
+<div class="row"><label for="dt">Date and time (day is shown automatically)</label><input id="dt" type="datetime-local"></div><div class="row"><button id="add">Add match</button></div></section>
+<section class="glass panel"><h2 style="margin-top:0">Squads and schedule</h2><div class="row"><select id="sel" aria-label="Match" style="flex:1"></select></div>
+<div class="row"><label for="dt2">Change date and time</label><input id="dt2" type="datetime-local"><button class="alt" id="sched">Save</button></div><div id="squads"></div></section></div></main><script src="/socket.io/socket.io.js"></script><script src="shared.js"></script><script src="app.js"></script><script src="charts.js"></script><script src="fx.js"></script><script src="admin.js"></script><script>adminInit('add');let ms=[],cur=null,shown=null;
+$('#add').onclick=()=>run(async()=>{const m=await api('/api/matches',{method:'POST',body:{teamA:$('#ta').value,teamB:$('#tb').value,title:$('#ti').value,overs:$('#ov').value,startsAt:$('#dt').value}});cur=m.id;shown=null;['ta','tb','ti','dt'].forEach(i=>$('#'+i).value='')});
+$('#sel').onchange=e=>{cur=e.target.value;shown=null;draw()};
+$('#sched').onclick=()=>run(()=>post(cur,'/schedule',{startsAt:$('#dt2').value}));
+const addP=s=>{const i=document.querySelector('[data-in="'+s+'"]');return run(()=>post(cur,'/squad',{side:s,name:i.value}))};
+$('#squads').onclick=e=>{const a=e.target.closest('[data-add]'),x=e.target.closest('.x');if(a)addP(a.dataset.add);if(x)run(()=>api('/api/matches/'+cur+'/squad',{method:'DELETE',body:{side:x.dataset.side,name:x.dataset.name}}))};
+$('#squads').onkeydown=e=>{if(e.key==='Enter'&&e.target.dataset.in)addP(e.target.dataset.in)};
+function draw(){const m=ms.find(x=>x.id===cur)||ms[0];cur=m?m.id:null;$('#sel').innerHTML=matchSelect(ms,cur);
+ if(shown!==cur){shown=cur;$('#dt2').value=m?m.startsAt:''}
+ $('#sched').disabled=!m;
+ $('#squads').innerHTML=m?['A','B'].map(s=>{const t=s==='A'?m.teamA:m.teamB,l=(s==='A'?m.squadA:m.squadB)||[];return `<div class="sq"><h3>${crest(t)}${esc(t)}</h3><div class="players">${l.map(p=>`<span class="pl">${esc(p)}<button class="x" data-side="${s}" data-name="${esc(p)}" aria-label="Remove ${esc(p)}">×</button></span>`).join('')||'<p class="meta">No players yet.</p>'}</div><div class="row"><input data-in="${s}" placeholder="Player name"><button data-add="${s}">Add</button></div></div>`}).join(''):'<p class="meta">Add a match first.</p>'}
+live(a=>{ms=a;draw()});</script></body></html>

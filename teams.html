@@ -1,0 +1,10 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="style.css"><link rel="icon" href="img/ball.svg"><title>Teams</title></head><body><div class="bg"></div><header class="top glass" id="top"></header><main><h1 class="ph">Teams</h1><p class="meta">Squads and who is playing right now.</p><div id="t" class="grid"></div></main><script src="/socket.io/socket.io.js"></script><script src="shared.js"></script><script src="app.js"></script><script src="charts.js"></script><script src="fx.js"></script><script>chrome('teams');
+live(ms=>{const T={};
+ ms.forEach(m=>[['A',m.teamA,m.teamB],['B',m.teamB,m.teamA]].forEach(([s,n,o])=>{const t=T[n]=T[n]||{name:n,players:[],list:[]};(m['squad'+s]||[]).forEach(p=>t.players.includes(p)||t.players.push(p));t.list.push({m,o})}));
+ const h=Object.values(T).map(t=>{const role={};
+  t.list.forEach(({m})=>{if(m.status==='live'&&m.current){const c=m.innings[m.innings.length-1];if(c){if(c.team===t.name){if(m.current.striker)role[m.current.striker]='Batting'}else if(m.current.bowler)role[m.current.bowler]='Bowling'}}});
+  const up=t.list.filter(x=>x.m.status!=='completed').sort((a,b)=>(a.m.startsAt||'9').localeCompare(b.m.startsAt||'9'))[0],w=up&&CK.whenParts(up.m);
+  const next=up?(up.m.status==='live'?'Playing now vs ':'Next: vs ')+esc(up.o)+(w?', '+w.day.slice(0,3)+' '+w.date+' at '+w.time:''):'No upcoming match';
+  const pl=t.players.map(p=>`<span class="pl ${role[p]==='Batting'?'bat':role[p]==='Bowling'?'bowl':''}">${esc(p)}${role[p]?`<em>${role[p]}</em>`:''}</span>`).join('')||'<p class="meta">Squad not added yet.</p>';
+  return `<article class="glass team"><h3>${crest(t.name)}${esc(t.name)}</h3><p class="meta next">${next}</p><div class="players">${pl}</div></article>`}).join('');
+ $('#t').innerHTML=h||'<div class="empty glass"><img src="img/stumps.svg" alt="">No teams yet. They appear once a match is added.</div>'})</script></body></html>

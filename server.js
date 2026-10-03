@@ -13,6 +13,16 @@ const PASS = process.env.ADMIN_PASSWORD || 'admin123';
 const DATA_DIR = process.env.DATA_DIR || __dirname;
 const FILE = path.join(DATA_DIR, 'data.json');
 const LEGAL_TYPES = new Set(['', 'b']);
+const clean = (s, n = 40) => (typeof s === 'string' ? s.trim().replace(/\s+/g, ' ').slice(0, n) : '');
+const validStart = s => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s || '') && !Number.isNaN(Date.parse(s));
+const squadKey = side => (side === 'A' ? 'squadA' : side === 'B' ? 'squadB' : null);
+function withDefaults(m) {
+  m.startsAt = m.startsAt || '';
+  m.squadA = m.squadA || [];
+  m.squadB = m.squadB || [];
+  m.current = m.current || { striker: '', bowler: '' };
+  return m;
+}
 
 if (process.env.NODE_ENV === 'production' && !process.env.ADMIN_PASSWORD) {
   throw new Error('Set ADMIN_PASSWORD before starting in production.');
@@ -26,6 +36,8 @@ try {
   if (error.code !== 'ENOENT') throw new Error(`Could not load ${FILE}: ${error.message}`);
 }
 
+matches.forEach(withDefaults);
+
 function save() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   const temp = `${FILE}.${process.pid}.tmp`;
@@ -37,9 +49,17 @@ const tokens = new Set();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+for (const file of ['admin.js', 'charts.js', 'fx.js', 'add-match.html', 'matches.html', 'teams.html']) {
+  app.get(`/${file}`, (req, res, next) => {
+    res.sendFile(path.join(__dirname, file), error => error && next(error));
+  });
+}
+
 const auth = (req, res, next) => tokens.has(req.get('x-token'))
   ? next()
   : res.status(401).json({ error: 'Login required' });
+
+app.get('/api/session', auth, (req, res) => res.json({ ok: true }));
 
 const find = (req, res, next) => {
   req.match = matches.find(match => match.id === req.params.id);
@@ -81,7 +101,7 @@ app.post('/api/login', (req, res) => {
 app.get('/api/matches', (req, res) => res.json(matches));
 
 app.post('/api/matches', auth, (req, res) => {
-  const { teamA, teamB, overs, title } = req.body || {};
+  const { teamA, teamB, overs, title, startsAt } = req.body || {};
   if (typeof teamA !== 'string' || !teamA.trim() || typeof teamB !== 'string' || !teamB.trim()) {
     return res.status(400).json({ error: 'Enter both team names' });
   }
@@ -89,6 +109,7 @@ app.post('/api/matches', auth, (req, res) => {
   if (!Number.isInteger(parsedOvers) || parsedOvers < 1 || parsedOvers > 50) {
     return res.status(400).json({ error: 'Overs must be a whole number from 1 to 50' });
   }
+  if (startsAt && !validStart(startsAt)) return res.status(400).json({ error: 'Enter a valid date and time' });
   const match = {
     id: crypto.randomBytes(8).toString('hex'),
     title: typeof title === 'string' ? title.trim().slice(0, 100) : '',
@@ -96,6 +117,10 @@ app.post('/api/matches', auth, (req, res) => {
     teamB: teamB.trim().slice(0, 60),
     overs: parsedOvers,
     status: 'upcoming',
+    startsAt: startsAt || '',
+    squadA: [],
+    squadB: [],
+    current: { striker: '', bowler: '' },
     result: '',
     innings: []
   };
@@ -155,6 +180,8 @@ app.post('/api/matches/:id/ball', auth, find, (req, res) => {
   };
   ball.r = bat + extra;
   innings.balls.push(ball);
+  if (ball.striker) match.current.striker = ball.striker;
+  if (ball.bowler) match.current.bowler = ball.bowler;
   if (inningsComplete(match, index)) ball.inningsComplete = true;
   return res.json(publish(match));
 });
@@ -175,6 +202,38 @@ app.post('/api/matches/:id/finish', auth, find, (req, res) => {
   match.status = 'completed';
   match.result = typeof req.body?.result === 'string' ? req.body.result.trim().slice(0, 200) : '';
   return res.json(publish(match));
+});
+
+app.post('/api/matches/:id/schedule', auth, find, (req, res) => {
+  const startsAt = req.body?.startsAt || '';
+  if (startsAt && !validStart(startsAt)) return res.status(400).json({ error: 'Enter a valid date and time' });
+  req.match.startsAt = startsAt;
+  return res.json(publish(req.match));
+});
+
+app.post('/api/matches/:id/squad', auth, find, (req, res) => {
+  const key = squadKey(req.body?.side);
+  const name = clean(req.body?.name);
+  if (!key || !name) return res.status(400).json({ error: 'Choose a team and enter a player name' });
+  const list = req.match[key];
+  if (list.length >= 20) return res.status(400).json({ error: 'A squad can have up to 20 players' });
+  if (list.some(player => player.toLowerCase() === name.toLowerCase())) {
+    return res.status(400).json({ error: 'That player is already in the squad' });
+  }
+  list.push(name);
+  return res.json(publish(req.match));
+});
+
+app.delete('/api/matches/:id/squad', auth, find, (req, res) => {
+  const key = squadKey(req.body?.side);
+  if (!key) return res.status(400).json({ error: 'Choose a team' });
+  req.match[key] = req.match[key].filter(player => player !== req.body?.name);
+  return res.json(publish(req.match));
+});
+
+app.post('/api/matches/:id/current', auth, find, (req, res) => {
+  req.match.current = { striker: clean(req.body?.striker, 60), bowler: clean(req.body?.bowler, 60) };
+  return res.json(publish(req.match));
 });
 
 app.delete('/api/matches/:id', auth, find, (req, res) => {
