@@ -1,34 +1,50 @@
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;600&display=swap" rel="stylesheet"><link rel="stylesheet" href="style.css"><link rel="icon" href="img/ball.svg"><title>Handle match</title></head><body><div class="bg"></div><header class="top glass" id="top"></header><main class="narrow"><div id="panel" hidden>
 <section class="glass panel"><div class="row" style="margin-top:0"><select id="sel" aria-label="Match" style="flex:1"></select></div><div id="when"></div>
-<div class="row"><label for="bt">First innings batting team</label><select id="bt"></select></div><div id="sum"></div>
+<div class="row"><label for="bt">First innings batting team</label><select id="bt"></select></div>
+<div class="row"><label for="tossWinner">Toss winner</label><select id="tossWinner"><option value="">Not decided</option></select></div>
+<div class="row"><label for="tossDecision">Toss decision</label><select id="tossDecision"><option value="">Choose</option><option value="batting">Bat first</option><option value="bowling">Bowl first</option></select></div>
+<div class="row"><button class="alt" id="tossBtn">Announce toss</button></div>
+<div id="sum"></div>
 <div class="row"><button id="inn">Start innings</button></div></section>
-<section class="glass panel"><div class="row" style="margin-top:0"><input id="st" list="stl" placeholder="Batter on strike"><datalist id="stl"></datalist><input id="bw" list="bwl" placeholder="Bowler"><datalist id="bwl"></datalist></div>
+<section class="glass panel"><div class="row" style="margin-top:0"><input id="st" list="stl" placeholder="Batter on strike"><input id="ns" list="nsl" placeholder="Non-striker"><datalist id="stl"></datalist><datalist id="nsl"></datalist><input id="bw" list="bwl" placeholder="Bowler"><datalist id="bwl"></datalist></div>
+<div class="row"><select id="outType"><option value="">No wicket</option><option value="bowled">Bowled</option><option value="caught">Caught</option><option value="run out">Run out</option><option value="stumped">Stumped</option><option value="lbw">LBW</option></select><input id="catcher" placeholder="Catcher name"><input id="runBy" placeholder="Run-out by"><input id="wk" placeholder="Wicket-keeper"></div>
 <div class="row"><button class="alt" id="setp">Show these players to viewers</button></div>
 <div class="score-fields"><label for="xr">Extra runs beyond the penalty<input id="xr" type="number" min="0" max="6" value="0"></label><label for="nr">No-ball batter runs<input id="nr" type="number" min="0" max="6" value="0"></label></div>
 <div class="pad" id="pad"></div><div class="row"><button class="alt" id="undo">Undo last ball</button></div>
 <div class="row preview"><small>Preview on this screen:</small><button class="f4" data-fx="4">FOUR</button><button class="s6" data-fx="6">SIX</button><button class="w" data-fx="w">OUT</button></div></section>
 <section class="glass panel"><div class="row" style="margin-top:0"><input id="res" placeholder="Result, e.g. Tigers won by 12 runs"><button class="alt" id="fin">Finish match</button></div>
 <div class="row"><button class="danger" id="del">Delete match</button></div></section></div></main><script src="/socket.io/socket.io.js"></script><script src="shared.js"></script><script src="app.js"></script><script src="charts.js"></script><script src="fx.js"></script><script src="admin.js"></script><script>adminInit('handle');let ms=[],cur=null,shown=null;
-const ball=(r,t,w)=>{const x=Number($('#xr').value)||0,bat=t==='nb'?Number($('#nr').value)||0:(t?0:r),extra=t==='wd'||t==='nb'||t==='b'?1+x:0;
- return run(()=>post(cur,'/ball',{r:bat+extra,bat,extra,t,w,striker:$('#st').value,bowler:$('#bw').value}))};
+const wicketPayload=()=>{
+  const type=$('#outType').value;
+  if(!type) return false;
+  return {type, fielder:$('#catcher').value || '', catcher:$('#catcher').value || '', wicketkeeper:$('#wk').value || '', runOutBy:$('#runBy').value || ''};
+};
+const ball=(r,t,w)=>{const x=Number($('#xr').value)||0,bat=t==='nb'?Number($('#nr').value)||0:(t?0:r),extra=t==='wd'||t==='nb'||t==='b'||t==='lb'?1+x:0;
+ const payload={r:bat+extra,bat,extra,t,w: w || wicketPayload(), striker:$('#st').value, nonStriker:$('#ns').value, bowler:$('#bw').value};
+ return run(()=>post(cur,'/ball',payload));};
 const mk=(l,c,f)=>{const b=document.createElement('button');b.textContent=l;b.className=c;b.onclick=f;$('#pad').append(b)};
 [0,1,2,3,4,6].forEach(r=>mk(r,r==4?'f4':r==6?'s6':'',()=>ball(r,'',false)));
-[['Wd','wd'],['Nb','nb'],['Bye','b']].forEach(([l,t])=>mk(l,'x',()=>ball(0,t,false)));mk('W','w',()=>ball(0,'',true));
+[['Wd','wd'],['Nb','nb'],['Bye','b'],['LB','lb']].forEach(([l,t])=>mk(l,'x',()=>ball(0,t,false)));mk('W','w',()=>ball(0,'',true));
 $('#undo').onclick=()=>run(()=>post(cur,'/undo'));$('#inn').onclick=()=>run(()=>post(cur,'/innings',{team:$('#bt').value}));
-$('#setp').onclick=()=>run(()=>post(cur,'/current',{striker:$('#st').value,bowler:$('#bw').value}));
+$('#setp').onclick=()=>run(()=>post(cur,'/current',{striker:$('#st').value,nonStriker:$('#ns').value,bowler:$('#bw').value}));
+$('#tossBtn').onclick=()=>run(async()=>{const winner=$('#tossWinner').value;const choice=$('#tossDecision').value;if(!winner||!choice)throw new Error('Pick the toss winner and decision first');await post(cur,'/toss',{wonBy:winner,decision:choice});say('Toss confirmed for '+winner+' to '+choice+' first');});
 $('#fin').onclick=()=>run(()=>post(cur,'/finish',{result:$('#res').value}));
 $('#del').onclick=()=>confirm('Delete this match for good?')&&run(async()=>{await api('/api/matches/'+cur,{method:'DELETE'});cur=null});
 $('#sel').onchange=e=>{cur=e.target.value;draw()};$('#bt').onchange=()=>draw();
-document.querySelectorAll('[data-fx]').forEach(b=>b.onclick=()=>FX.ball(b.dataset.fx==='w'?{w:true,striker:'Batter',bowler:'Bowler'}:{bat:+b.dataset.fx,striker:'Batter',bowler:'Bowler'}));
+document.querySelectorAll('[data-fx]').forEach(b=>b.onclick=()=>FX.ball(b.dataset.fx==='w'?{w:{type:'caught',catcher:'Fielder'},striker:'Batter',nonStriker:'Partner',bowler:'Bowler'}:{bat:+b.dataset.fx,striker:'Batter',nonStriker:'Partner',bowler:'Bowler'}));
 function draw(){const m=ms.find(x=>x.id===cur)||ms[0];cur=m?m.id:null;$('#sel').innerHTML=matchSelect(ms,cur);
  const keep=$('#bt').value;$('#bt').innerHTML=m?[m.teamA,m.teamB].map(t=>`<option value="${esc(t)}">${esc(t)}</option>`).join(''):'';
+ $('#tossWinner').innerHTML=m?`<option value="">Not decided</option><option value="${esc(m.teamA)}">${esc(m.teamA)}</option><option value="${esc(m.teamB)}">${esc(m.teamB)}</option>`:'<option value="">Not decided</option>';
+ if(m&&m.toss&&m.toss.wonBy){$('#tossWinner').value=m.toss.wonBy;$('#tossDecision').value=m.toss.decision||'';}
  if(m&&m.innings[0])$('#bt').value=m.innings[0].team;else if(m&&keep&&[m.teamA,m.teamB].includes(keep))$('#bt').value=keep;$('#bt').disabled=!m||m.innings.length>0;
  const n=m?m.innings.length:0,last=m&&m.innings[n-1],bat=!m?'':last?last.team:($('#bt').value||m.teamA),fld=!m?'':bat===m.teamA?m.teamB:m.teamA,sq=t=>!m?[]:(t===m.teamA?m.squadA:m.squadB)||[];
- $('#stl').innerHTML=sq(bat).map(p=>`<option value="${esc(p)}">`).join('');$('#bwl').innerHTML=sq(fld).map(p=>`<option value="${esc(p)}">`).join('');
- $('#st').placeholder='Batter on strike'+(bat?' ('+bat+')':'');$('#bw').placeholder='Bowler'+(fld?' ('+fld+')':'');
- if(shown!==cur){shown=cur;$('#st').value=m&&m.current?m.current.striker:'';$('#bw').value=m&&m.current?m.current.bowler:''}
+ $('#stl').innerHTML=sq(bat).map(p=>`<option value="${esc(p)}">`).join('');$('#nsl').innerHTML=sq(bat).map(p=>`<option value="${esc(p)}">`).join('');$('#bwl').innerHTML=sq(fld).map(p=>`<option value="${esc(p)}">`).join('');
+ $('#st').placeholder='Batter on strike'+(bat?' ('+bat+')':'');$('#ns').placeholder='Non-striker'+(bat?' ('+bat+')':'');$('#bw').placeholder='Bowler'+(fld?' ('+fld+')':'');
+ if(shown!==cur){shown=cur;$('#st').value=m&&m.current?m.current.striker:'';$('#ns').value=m&&m.current?m.current.nonStriker:'';$('#bw').value=m&&m.current?m.current.bowler:'';$('#res').value=m?m.result||'':'';}
  $('#when').innerHTML=m?whenHTML(m):'';
  const s=m?CK.summarize(m):[];$('#sum').innerHTML=m?(s.length?s.map(i=>`<div class="tm">${crest(i.team)}<span class="nm">${esc(i.team)}</span><b>${i.runs}/${i.wkts}</b><small>${i.overs} ov</small></div>`).join(''):'<p class="meta">Not started. Press Start innings.</p>'):'<p class="meta">No match yet. Add one on the Add match page.</p>';
+ if(m&&m.toss&&m.toss.announced){$('#sum').insertAdjacentHTML('beforeend',`<p class="meta">${esc(CK.tossText(m))}</p>`)}
  $('#inn').textContent='Start innings '+(n+1);$('#inn').disabled=!m||m.status==='completed'||n>=2||(n===1&&!CK.complete(m,0));
- ['setp','undo','fin','del'].forEach(k=>$('#'+k).disabled=!m||(k!=='del'&&m.status==='completed')||(k==='undo'&&m.status!=='live'));[...$('#pad').children].forEach(b=>b.disabled=!m||m.status!=='live')}
+ ['setp','undo','fin','del','tossBtn'].forEach(k=>$('#'+k).disabled=!m||(k!=='del'&&m.status==='completed')||(k==='undo'&&m.status!=='live')||(k==='tossBtn'&&m.status==='completed'));
+ [...$('#pad').children].forEach(b=>b.disabled=!m||m.status!=='live')}
 live(a=>{ms=a;draw()});</script></body></html>

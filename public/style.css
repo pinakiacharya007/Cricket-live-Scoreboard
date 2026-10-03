@@ -90,7 +90,7 @@ svg.chart{width:100%;height:auto;display:block}.tx{font:600 11px Barlow,sans-ser
 .fx{position:fixed;inset:0;z-index:50;pointer-events:none;display:grid;place-items:center;overflow:hidden;text-align:center}
 .fx .t{font:700 clamp(96px,28vw,240px)/1 'Barlow Condensed',sans-serif;-webkit-text-stroke:4px #fff;paint-order:stroke fill;animation:pop 2.2s cubic-bezier(.2,1.4,.4,1) forwards}
 .fx .s{display:inline-block;margin-top:6px;padding:6px 16px;border-radius:999px;background:rgba(255,255,255,.85);font-weight:600;animation:fade 2.2s forwards}
-.fx.four .t{color:#1F9D55}.fx.six .t{color:#2B6CB0;text-shadow:0 0 50px #F6C945}.fx.out .t{color:#D7263D;animation-name:slam}
+.fx.four .t{color:#1F9D55}.fx.six .t{color:#2B6CB0;text-shadow:0 0 50px #F6C945}.fx.out .t{color:#D7263D;animation-name:slam}.fx.run .t,.fx.dot .t{font-size:clamp(90px,22vw,180px);color:#0F2A43}.fx.extra .t,.fx.wd .t,.fx.nb .t{font-size:clamp(72px,20vw,160px);color:#C98A12}.fx.run .s,.fx.dot .s,.fx.extra .s,.fx.wd .s,.fx.nb .s{background:rgba(255,255,255,.92)}
 @keyframes pop{0%{transform:scale(.2) rotate(-8deg);opacity:0}14%{transform:scale(1.18) rotate(2deg);opacity:1}28%{transform:scale(1)}85%{opacity:1}100%{transform:scale(1.12);opacity:0}}
 @keyframes slam{0%{transform:scale(3.2);opacity:0}12%{transform:scale(1);opacity:1}18%{transform:translateX(-16px)}24%{transform:translateX(16px)}30%{transform:translateX(-10px)}36%{transform:translateX(0)}85%{opacity:1}100%{opacity:0}}
 @keyframes fade{0%,80%{opacity:1}100%{opacity:0}}

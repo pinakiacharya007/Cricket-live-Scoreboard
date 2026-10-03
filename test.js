@@ -21,6 +21,15 @@ const call=async(p,method='GET',body,t)=>{const r=await fetch(B+p,{method,header
  await call(u+'/undo','POST',{},t);await sleep(200);s=CK.summarize(got[got.length-1])[0];
  assert.deepStrictEqual([s.runs,s.balls],[6,3],'undo works');
  await call(u+'/innings','POST',{},t);assert.strictEqual((await call(u+'/innings','POST',{},t)).status,400,'max 2 innings');
+ const toss=(await call(u+'/toss','POST',{wonBy:'Tigers',decision:'batting'},t)).body;
+ assert.deepStrictEqual(toss.toss,{wonBy:'Tigers',decision:'batting',announced:true},'toss info is stored');
+ const dup=(await call(u+'/squad','POST',{side:'A',name:'Nikhil'},t));
+ assert.strictEqual(dup.status,200,'first squad entry ok');
+ assert.strictEqual((await call(u+'/squad','POST',{side:'B',name:'Nikhil'},t)).status,400,'duplicate squad names across teams rejected');
+ const wicket=(await call(u+'/ball','POST',{w:{type:'caught',fielder:'Rohit',catcher:'Kohli'},striker:'Nikhil',nonStriker:'Avi',bowler:'Mishra'},t)).body;
+ assert.strictEqual(wicket.current.striker,'Nikhil','current striker carries forward');
+ const last = wicket.innings[0].balls[wicket.innings[0].balls.length-1];
+ assert.ok(last.w && last.w.type==='caught','wicket details are saved');
  await call(u+'/finish','POST',{result:'Lions won'},t);
  const all=(await call('/api/matches')).body;assert.strictEqual(all[0].status,'completed');
  assert.ok(fs.readFileSync(path.join(dir,'data.json'),'utf8').includes(m.id),'saved to disk');

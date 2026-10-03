@@ -3,10 +3,11 @@ live(ms=>{const m=ms.find(x=>x.id===id);if(!m){$('#m').innerHTML='<div class="em
 const s=CK.summarize(m),cur=m.innings[m.innings.length-1],bat=m.status==='live'&&cur?cur.team:'',now=m.current||{};document.title=m.teamA+' v '+m.teamB;
 const side=t=>{const i=s.find(x=>x.team===t);return '<div class="side '+(t===bat?'bat':'')+'">'+crest(t)+'<div class="nm">'+esc(t)+'</div><div class="big">'+(i?i.runs+'/'+i.wkts:'–')+'</div><div class="ov">'+(i?i.overs+' / '+m.overs+' ov':'Yet to bat')+'</div></div>'};
 let h='<section class="glass board"><div class="meta">'+pill(m)+'<span>'+esc(m.title)+' '+m.overs+' overs each</span></div>'+whenHTML(m)+'<div class="sides">'+side(m.teamA)+'<span class="vs">v</span>'+side(m.teamB)+'</div>';
+if(m.toss && m.toss.announced)h+='<div class="chase">'+esc(CK.tossText(m))+'</div>';
 if(m.result)h+='<div class="chase">'+esc(m.result)+'</div>';
 else if(s.length===2){const n=s[0].runs+1-s[1].runs;h+='<div class="chase">'+(n>0?esc(s[1].team)+' need '+n+' from '+(m.overs*6-s[1].balls)+' balls':esc(s[1].team)+' have reached the target')+'</div>'}
 else if(!s.length)h+='<p class="empty" style="margin:0"><img src="img/stumps.svg" alt="">The match has not started yet.</p>';
-if(m.status==='live'&&cur&&(now.striker||now.bowler))h+='<div class="now">'+(now.striker?'<span class="bat">Batting<b>'+esc(now.striker)+'</b></span>':'')+(now.bowler?'<span class="bowl">Bowling<b>'+esc(now.bowler)+'</b></span>':'')+'</div>';
+if(m.status==='live'&&cur&&(now.striker||now.nonStriker||now.bowler))h+='<div class="now">'+(now.striker?'<span class="bat">Striker<b>'+esc(now.striker)+'</b></span>':'')+(now.nonStriker?'<span class="bat">Non-striker<b>'+esc(now.nonStriker)+'</b></span>':'')+(now.bowler?'<span class="bowl">Bowling<b>'+esc(now.bowler)+'</b></span>':'')+'</div>';
 h+='</section>';
 if((m.squadA||[]).length||(m.squadB||[]).length)h+='<section class="glass pane"><h2>Squads</h2><div class="squads">'+[[m.teamA,m.squadA||[]],[m.teamB,m.squadB||[]]].map(([t,l])=>`<div class="sq"><h3>${crest(t)}${esc(t)}</h3><div class="players">${l.map(p=>{const r=m.status!=='live'?'':p===now.striker?'bat':p===now.bowler?'bowl':'';return `<span class="pl ${r}">${esc(p)}${r?`<em>${r==='bat'?'Batting':'Bowling'}</em>`:''}</span>`}).join('')||'<p class="meta">Squad not added yet.</p>'}</div></div>`).join('')+'</div></section>';
 h+='<section class="glass pane"><h2>Match insights</h2>'+charts(m)+'</section>';

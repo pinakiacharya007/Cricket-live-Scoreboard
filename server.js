@@ -15,13 +15,33 @@ const FILE = path.join(DATA_DIR, 'data.json');
 const LEGAL_TYPES = new Set(['', 'b']);
 const clean = (s, n = 40) => (typeof s === 'string' ? s.trim().replace(/\s+/g, ' ').slice(0, n) : '');
 const validStart = s => /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s || '') && !Number.isNaN(Date.parse(s));
+const validTossDecision = s => ['batting', 'bowling'].includes(s || '');
 const squadKey = side => (side === 'A' ? 'squadA' : side === 'B' ? 'squadB' : null);
 function withDefaults(m) {
   m.startsAt = m.startsAt || '';
   m.squadA = m.squadA || [];
   m.squadB = m.squadB || [];
-  m.current = m.current || { striker: '', bowler: '' };
+  m.toss = m.toss || { wonBy: '', decision: '', announced: false };
+  m.current = m.current || { striker: '', nonStriker: '', bowler: '' };
+  m.current.striker = m.current.striker || '';
+  m.current.nonStriker = m.current.nonStriker || '';
+  m.current.bowler = m.current.bowler || '';
   return m;
+}
+function normalizeWicket(raw) {
+  if (raw === false || raw === null || raw === undefined) return false;
+  if (raw === true) return { type: 'bowled', fielder: '', catcher: '', wicketkeeper: '', runOutBy: '', note: '' };
+  if (typeof raw === 'string') return { type: raw.toLowerCase(), fielder: '', catcher: '', wicketkeeper: '', runOutBy: '', note: '' };
+  if (typeof raw !== 'object') return null;
+  const type = String(raw.type || raw.kind || 'bowled').toLowerCase();
+  return {
+    type,
+    fielder: clean(raw.fielder || raw.outby || raw.by || '', 60),
+    catcher: clean(raw.catcher || raw.fieldedBy || '', 60),
+    wicketkeeper: clean(raw.wicketkeeper || raw.wk || '', 60),
+    runOutBy: clean(raw.runOutBy || raw.runner || '', 60),
+    note: clean(raw.note || '', 80)
+  };
 }
 
 if (process.env.NODE_ENV === 'production' && !process.env.ADMIN_PASSWORD) {
@@ -154,18 +174,20 @@ app.post('/api/matches/:id/ball', auth, find, (req, res) => {
   if (!innings || match.status !== 'live') return res.status(400).json({ error: 'Start an innings first' });
   if (inningsComplete(match, index)) return res.status(400).json({ error: 'This innings is complete' });
 
-  const { t = '', w = false, striker = '', bowler = '' } = req.body || {};
-  const type = ['wd', 'nb', 'b'].includes(t) ? t : '';
-  const legacyRuns = req.body?.bat === undefined && type;
-  const rawBat = req.body?.bat ?? (legacyRuns ? 0 : req.body?.r ?? 0);
-  const rawExtra = req.body?.extra ?? (legacyRuns ? req.body?.r ?? 1 : type ? 1 : 0);
+  const body = req.body || {};
+  const { t = '', striker = '', nonStriker = '', bowler = '' } = body;
+  const type = ['wd', 'nb', 'b', 'lb'].includes(t) ? t : '';
+  const legacyRuns = body.bat === undefined && type;
+  const rawBat = body.bat ?? (legacyRuns ? 0 : body.r ?? 0);
+  const rawExtra = body.extra ?? (legacyRuns ? body.r ?? 1 : type ? 1 : 0);
   const bat = Number(rawBat);
   const extra = Number(rawExtra);
+  const wicket = normalizeWicket(body.w ?? body.wicket ?? body.dismissal ?? body.out ?? false);
   if (!Number.isInteger(bat) || bat < 0 || bat > 6 || !Number.isInteger(extra) || extra < 0 || extra > 7) {
     return res.status(400).json({ error: 'Runs must be whole numbers in the supported range' });
   }
   if (type === 'wd' && bat !== 0) return res.status(400).json({ error: 'Wide deliveries cannot add batter runs' });
-  if (type === 'b' && bat !== 0) return res.status(400).json({ error: 'Bye deliveries cannot add batter runs' });
+  if ((type === 'b' || type === 'lb') && bat !== 0) return res.status(400).json({ error: 'Bye/leg-bye deliveries cannot add batter runs' });
   if ((type === 'wd' || type === 'nb') && extra < 1) {
     return res.status(400).json({ error: 'Wide and no-ball deliveries include at least one penalty run' });
   }
@@ -174,13 +196,15 @@ app.post('/api/matches/:id/ball', auth, find, (req, res) => {
     bat,
     extra,
     t: type,
-    w: Boolean(w),
+    w: wicket && wicket.type ? wicket : false,
     striker: typeof striker === 'string' ? striker.slice(0, 60) : '',
+    nonStriker: typeof nonStriker === 'string' ? nonStriker.slice(0, 60) : '',
     bowler: typeof bowler === 'string' ? bowler.slice(0, 60) : ''
   };
   ball.r = bat + extra;
   innings.balls.push(ball);
   if (ball.striker) match.current.striker = ball.striker;
+  if (ball.nonStriker) match.current.nonStriker = ball.nonStriker;
   if (ball.bowler) match.current.bowler = ball.bowler;
   if (inningsComplete(match, index)) ball.inningsComplete = true;
   return res.json(publish(match));
@@ -216,9 +240,10 @@ app.post('/api/matches/:id/squad', auth, find, (req, res) => {
   const name = clean(req.body?.name);
   if (!key || !name) return res.status(400).json({ error: 'Choose a team and enter a player name' });
   const list = req.match[key];
+  const allNames = [...req.match.squadA, ...req.match.squadB].map(player => player.toLowerCase());
   if (list.length >= 20) return res.status(400).json({ error: 'A squad can have up to 20 players' });
-  if (list.some(player => player.toLowerCase() === name.toLowerCase())) {
-    return res.status(400).json({ error: 'That player is already in the squad' });
+  if (allNames.includes(name.toLowerCase())) {
+    return res.status(400).json({ error: 'That player is already assigned to a team in this match' });
   }
   list.push(name);
   return res.json(publish(req.match));
@@ -232,7 +257,26 @@ app.delete('/api/matches/:id/squad', auth, find, (req, res) => {
 });
 
 app.post('/api/matches/:id/current', auth, find, (req, res) => {
-  req.match.current = { striker: clean(req.body?.striker, 60), bowler: clean(req.body?.bowler, 60) };
+  req.match.current = {
+    striker: clean(req.body?.striker, 60),
+    nonStriker: clean(req.body?.nonStriker, 60),
+    bowler: clean(req.body?.bowler, 60)
+  };
+  return res.json(publish(req.match));
+});
+
+app.post('/api/matches/:id/toss', auth, find, (req, res) => {
+  const { wonBy, decision } = req.body || {};
+  if (wonBy !== req.match.teamA && wonBy !== req.match.teamB) {
+    return res.status(400).json({ error: 'Choose a valid team that won the toss' });
+  }
+  if (!validTossDecision(decision)) {
+    return res.status(400).json({ error: 'Choose batting or bowling as the toss decision' });
+  }
+  req.match.toss = { wonBy, decision, announced: true };
+  if (!req.match.status || req.match.status === 'completed') {
+    req.match.status = req.match.status === 'completed' ? 'completed' : 'upcoming';
+  }
   return res.json(publish(req.match));
 });
 
