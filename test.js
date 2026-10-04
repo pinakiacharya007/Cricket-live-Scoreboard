@@ -50,4 +50,7 @@ const call=async(p,method='GET',body,t)=>{const r=await fetch(B+p,{method,header
  await call(du+'/innings','POST',{team:'Red'},t);for(let k=0;k<6;k++)await call(du+'/ball','POST',{r:0},t);
  await call(du+'/innings','POST',{},t);await call(du+'/ball','POST',{r:1},t);
  const final=(await call(du+'/finish','POST',{},t)).body;assert.strictEqual(final.winner,'Green','winner is calculated from innings scores');assert.strictEqual(final.result,'Green won by 10 wickets','automatic result is available for the finished banner');
+ const tossChoice=(await call('/api/matches','POST',{teamA:'Eagles',teamB:'Falcons',overs:5},t)).body,tu='/api/matches/'+tossChoice.id;
+ await call(tu+'/toss/start','POST',{},t);await call(tu+'/toss','POST',{wonBy:'Falcons',decision:'batting'},t);
+ const tossInnings=(await call(tu+'/innings','POST',{},t)).body;assert.strictEqual(tossInnings.innings[0].team,'Falcons','team B bats first when it wins the toss and chooses batting');
  console.log('All tests passed');ok=true;sock.close()}catch(e){console.error('TEST FAILED:',e.message)}srv.kill();process.exit(ok?0:1)})();

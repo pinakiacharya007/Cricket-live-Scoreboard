@@ -164,7 +164,10 @@ app.post('/api/matches/:id/innings', auth, find, (req, res) => {
   if (index === 1 && !inningsComplete(match, 0)) {
     return res.status(400).json({ error: 'Finish the first innings before starting the second' });
   }
-  const team = index === 0 ? (req.body?.team || match.teamA)
+  const tossBatting = match.toss?.announced
+    ? match.toss.decision === 'batting' ? match.toss.wonBy : match.toss.wonBy === match.teamA ? match.teamB : match.teamA
+    : '';
+  const team = index === 0 ? (req.body?.team || tossBatting || match.teamA)
     : (match.innings[0].team === match.teamA ? match.teamB : match.teamA);
   if (index === 0 && team !== match.teamA && team !== match.teamB) {
     return res.status(400).json({ error: 'Choose one of the match teams to bat' });
